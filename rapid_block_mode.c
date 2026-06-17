@@ -1,3 +1,6 @@
+#include <H5Ipublic.h>
+#include <H5Ppublic.h>
+#include <H5Tpublic.h>
 #include <hdf5.h>
 #include <math.h>
 #include <stdio.h>
@@ -8,6 +11,8 @@
 #include <libps5000a/PicoStatus.h>
 #include <libps5000a/ps5000aApi.h>
 
+
+const int64_t version = 2;
 void color_bold() { printf("\033[1m"); }
 
 void color_red() { printf("\033[0;31m"); }
@@ -69,8 +74,6 @@ double range_to_double(enum enPS5000ARange range) {
   }
 }
 
-
-
 int main(int argc, char *argv[]) {
 
   PICO_STATUS ret;
@@ -78,7 +81,8 @@ int main(int argc, char *argv[]) {
 
   if (argc < 2) {
     printf("At least save file name necessary:\n\n");
-    printf("\t%s file [time_interval_ns scan_time_s discharge_period_s range_A range_B]\n",
+    printf("\t%s file [time_interval_ns scan_time_s discharge_period_s range_A "
+           "range_B]\n",
            argv[0]);
     exit(EXIT_FAILURE);
   }
@@ -204,9 +208,7 @@ int main(int argc, char *argv[]) {
 
   printf("Pulse signal generator...");
 
-    ret = ps5000aSigGenSoftwareControl(
-      handle, 1
-    );
+  ret = ps5000aSigGenSoftwareControl(handle, 1);
   expect_ok(ret);
   printf("done!\n");
 
@@ -217,7 +219,6 @@ int main(int argc, char *argv[]) {
                         num_samples - pretrigger_samples, timebase, NULL, 0,
                         NULL, NULL);
   expect_ok(ret);
-
 
   int16_t is_ready = 0;
   uint32_t cur_captures = 0;
@@ -252,58 +253,29 @@ int main(int argc, char *argv[]) {
   printf("done!\n");
 
   printf("Download values form scope...\n");
-  
+
   /* Bulk transfer of captures */
 
-    uint32_t request_samples = num_samples;
-    int16_t overflow[num_captures];
-    ret = ps5000aGetValuesBulk(handle, &request_samples, 0, num_captures - 1, 1,
-                           PS5000A_RATIO_MODE_NONE, overflow);
+  uint32_t request_samples = num_samples;
+  int16_t overflow[num_captures];
+  ret = ps5000aGetValuesBulk(handle, &request_samples, 0, num_captures - 1, 1,
+                             PS5000A_RATIO_MODE_NONE, overflow);
 
-    expect_ok(ret);
+  expect_ok(ret);
 
-    if (request_samples != num_samples) {
-      color_red();
-      printf(
-          "\rWarning: Number of retrieved samples != num_samples! %d vs. %d.\n",
-          request_samples, num_samples);
-      color_reset();
-    }
+  if (request_samples != num_samples) {
+    color_red();
+    printf(
+        "\rWarning: Number of retrieved samples != num_samples! %d vs. %d.\n",
+        request_samples, num_samples);
+    color_reset();
+  }
 
-    if (overflow) {
-      color_red();
-      printf("Overflow: %2b", overflow);
-      color_reset();
-    }
-
-  /* Old code to request each segment at a time */
-
-  /*for (int i = 0; i < num_captures; i++) {*/
-  /*  uint32_t request_samples = num_samples;*/
-  /*  int16_t overflow;*/
-  /*  ret = ps5000aGetValues(handle, 0, &request_samples, 1,*/
-  /*                         PS5000A_RATIO_MODE_NONE, i, &overflow);*/
-  /*  expect_ok(ret);*/
-  /**/
-  /*  if (request_samples != num_samples) {*/
-  /*    color_red();*/
-  /*    printf(*/
-  /*        "\rWarning: Number of retrieved samples != num_samples! %d vs. %d.\n",*/
-  /*        request_samples, num_samples);*/
-  /*    color_reset();*/
-  /*  }*/
-  /**/
-  /*  if (overflow) {*/
-  /*    color_red();*/
-  /*    printf("Overflow: %2b", overflow);*/
-  /*    color_reset();*/
-  /*  }*/
-  /**/
-  /*  color_bold();*/
-  /*  printf("\r%5d / %5d", i, num_captures);*/
-  /*  color_reset();*/
-  /*  fflush(stdout);*/
-  /*}*/
+  if (overflow) {
+    color_red();
+    printf("Overflow: %2b", overflow);
+    color_reset();
+  }
 
   color_green();
   printf("...done!\n");
@@ -343,25 +315,12 @@ int main(int argc, char *argv[]) {
   ret = ps5000aMaximumValue(handle, &max_ADC_value);
   expect_ok(ret);
 
-  double *voltage_A = calloc(num_captures * num_samples, sizeof(double));
-  double *voltage_B = calloc(num_captures * num_samples, sizeof(double));
-  double *time = calloc(num_captures * num_samples, sizeof(double));
-
-  for (int i = 0; i < num_captures * num_samples; i++) {
-    voltage_A[i] =
-        (range_to_double(range_A) * buffer_channel_A[i]) / max_ADC_value;
-    voltage_B[i] =
-        (range_to_double(range_B) * buffer_channel_B[i]) / max_ADC_value;
-  }
-
-  for (int i = 0; i < num_captures; i++) {
-    for (int j = 0; j < num_samples; j++) {
-      time[i * num_samples + j] = ((trigger_info[i].timeStampCounter -
-                                    trigger_info[0].timeStampCounter) +
-                                   j) *
-                                  time_interval_ns * 1e-9;
-    }
-  }
+  /*for (int i = 0; i < num_captures * num_samples; i++) {*/
+  /*  voltage_A[i] =*/
+  /*      (range_to_double(range_A) * buffer_channel_A[i]) / max_ADC_value;*/
+  /*  voltage_B[i] =*/
+  /*      (range_to_double(range_B) * buffer_channel_B[i]) / max_ADC_value;*/
+  /*}*/
 
   /*printf("Last 10 voltage_A:\n");*/
   /*for (int i = 0; i < 10; i++) {*/
@@ -371,32 +330,63 @@ int main(int argc, char *argv[]) {
   /*}*/
 
   printf("Saving data to file %s...", file);
-  hid_t file_id, dataspace_id, voltage_A_id, voltage_B_id, time_id;
+  hid_t file_id, dataspace_id, scalarspace_id, voltage_A_id, voltage_B_id,
+      parameters_id;
   herr_t status;
   hsize_t dims[2];
+  dims[0] = num_captures;
+  dims[1] = num_samples;
+  hsize_t pdims = 1;
 
   file_id = H5Fcreate(file, H5F_ACC_TRUNC, H5P_DEFAULT, H5P_DEFAULT);
 
-  dims[0] = num_captures;
-  dims[1] = num_samples;
   dataspace_id = H5Screate_simple(2, dims, NULL);
-  voltage_A_id = H5Dcreate2(file_id, "/voltage_A", H5T_INTEL_F64, dataspace_id,
-                            H5P_DEFAULT, H5P_DEFAULT, H5P_DEFAULT);
-  voltage_B_id = H5Dcreate2(file_id, "/voltage_B", H5T_INTEL_F64, dataspace_id,
-                            H5P_DEFAULT, H5P_DEFAULT, H5P_DEFAULT);
-  time_id = H5Dcreate2(file_id, "/time", H5T_INTEL_F64, dataspace_id,
-                       H5P_DEFAULT, H5P_DEFAULT, H5P_DEFAULT);
+  scalarspace_id = H5Screate_simple(0, NULL, NULL);
 
-  status = H5Dwrite(voltage_A_id, H5T_NATIVE_DOUBLE, H5S_ALL, H5S_ALL,
-                    H5P_DEFAULT, voltage_A);
-  status = H5Dwrite(voltage_B_id, H5T_NATIVE_DOUBLE, H5S_ALL, H5S_ALL,
-                    H5P_DEFAULT, voltage_B);
-  status =
-      H5Dwrite(time_id, H5T_NATIVE_DOUBLE, H5S_ALL, H5S_ALL, H5P_DEFAULT, time);
+  voltage_A_id = H5Dcreate2(file_id, "/channel_A", H5T_INTEL_I16, dataspace_id,
+                            H5P_DEFAULT, H5P_DEFAULT, H5P_DEFAULT);
+  voltage_B_id = H5Dcreate2(file_id, "/channel_B", H5T_INTEL_I16, dataspace_id,
+                            H5P_DEFAULT, H5P_DEFAULT, H5P_DEFAULT);
+  status = H5Dwrite(voltage_A_id, H5T_NATIVE_INT16, H5S_ALL, H5S_ALL,
+                    H5P_DEFAULT, buffer_channel_A);
+  status = H5Dwrite(voltage_B_id, H5T_NATIVE_INT16, H5S_ALL, H5S_ALL,
+                    H5P_DEFAULT, buffer_channel_B);
+  double parameter_buffer[] = {time_interval_ns,
+                               range_to_double(range_A) / max_ADC_value,
+                               range_to_double(range_B) / max_ADC_value};
+
+  hid_t id;
+  // save file data version
+  id = H5Dcreate2(file_id, "/version", H5T_INTEL_I16, scalarspace_id,
+                 H5P_DEFAULT, H5P_DEFAULT, H5P_DEFAULT);
+  status = H5Dwrite(id, H5T_NATIVE_INT16, H5S_ALL, H5S_ALL,
+                    H5P_DEFAULT, &version);
+  status = H5Dclose(id);
+  
+  // save time_interval_ns 
+  id = H5Dcreate2(file_id, "/time_interval_ns", H5T_INTEL_F32, scalarspace_id,
+                 H5P_DEFAULT, H5P_DEFAULT, H5P_DEFAULT);
+  status = H5Dwrite(id, H5T_NATIVE_FLOAT, H5S_ALL, H5S_ALL,
+                    H5P_DEFAULT, &time_interval_ns);
+  status = H5Dclose(id);
+
+  // save scale_factor_A 
+  double scale_factor_A = range_to_double(range_A) / max_ADC_value;
+  id = H5Dcreate2(file_id, "/scale_factor_A", H5T_INTEL_F64, scalarspace_id,
+                 H5P_DEFAULT, H5P_DEFAULT, H5P_DEFAULT);
+  status = H5Dwrite(id, H5T_NATIVE_DOUBLE, H5S_ALL, H5S_ALL,
+                    H5P_DEFAULT, &scale_factor_A);
+  status = H5Dclose(id);
+  // save scale_factor_B 
+  double scale_factor_B = range_to_double(range_A) / max_ADC_value;
+  id = H5Dcreate2(file_id, "/scale_factor_B", H5T_INTEL_F64, scalarspace_id,
+                 H5P_DEFAULT, H5P_DEFAULT, H5P_DEFAULT);
+  status = H5Dwrite(id, H5T_NATIVE_DOUBLE, H5S_ALL, H5S_ALL,
+                    H5P_DEFAULT, &scale_factor_B);
+  status = H5Dclose(id);
 
   status = H5Dclose(voltage_A_id);
   status = H5Dclose(voltage_B_id);
-  status = H5Dclose(time_id);
   status = H5Sclose(dataspace_id);
   status = H5Fclose(file_id);
 
