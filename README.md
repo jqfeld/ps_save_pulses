@@ -18,3 +18,8 @@ Then build by running make:
 ```sh
 make rapid_block_mode
 ```
+
+## Testing the build on non OpenSUSE systems
+```sh
+podman build -t rapidblock .
+```
